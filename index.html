@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin RME — Scan QR Pasien</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<style>
+  body { font-family: 'Plus Jakarta Sans', sans-serif; background: #f1f5f9; font-size: 14px; }
+
+  .topbar { background: #1e3a5f; color: #fff; padding: 13px 20px; display: flex; align-items: center; justify-content: space-between; }
+  .topbar-title { font-size: 15px; font-weight: 600; }
+  .topbar-sub   { font-size: 11px; opacity: .6; margin-top: 1px; }
+
+  .card { border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: none; }
+  .card-header { background: #fff; border-bottom: 1px solid #f1f5f9; border-radius: 12px 12px 0 0 !important; font-weight: 600; font-size: 13px; padding: 12px 18px; color: #1e3a5f; }
+  .card-body { padding: 16px 18px; }
+
+  .form-label { font-size: 12px; font-weight: 500; color: #64748b; margin-bottom: 4px; }
+  .form-control, .form-select { font-size: 13px; border-color: #e2e8f0; border-radius: 8px; padding: 8px 11px; }
+  .form-control:focus, .form-select:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.1); }
+  .form-control.filled { background: #f0f9ff; border-color: #7dd3fc; }
+  .form-select.filled  { background: #f0f9ff; border-color: #7dd3fc; }
+  @keyframes flashFill {
+    0%  { background:#fff;    border-color:#e2e8f0; }
+    45% { background:#dbeafe; border-color:#3b82f6; }
+    100%{ background:#f0f9ff; border-color:#7dd3fc; }
+  }
+  .flash { animation: flashFill .55s ease forwards; }
+
+  .btn { border-radius: 8px; font-size: 13px; font-weight: 500; }
+  .btn-primary { background: #1d4ed8; border-color: #1d4ed8; }
+  .btn-primary:hover { background: #1e40af; }
+  .btn-success { background: #16a34a; border-color: #16a34a; }
+  .btn-success:hover { background: #15803d; }
+  .btn-danger  { background: #dc2626; border-color: #dc2626; }
+  .btn-danger:hover { background: #b91c1c; }
+
+  /* ── Scanner area ── */
+  .cam-box { position:relative; width:100%; aspect-ratio:1; background:#0f172a; border-radius:10px; overflow:hidden; display:flex; align-items:center; justify-content:center; margin-bottom:10px; }
+  .cam-box video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:none; }
+  .cam-box canvas.overlay { position:absolute; inset:0; width:100%; height:100%; display:none; pointer-events:none; }
+  .cam-idle { text-align:center; color:rgba(255,255,255,.6); font-size:12px; padding:20px; z-index:2; }
+  .cam-frame { position:absolute; inset:18px; border:1.5px solid rgba(255,255,255,.2); border-radius:8px; pointer-events:none; z-index:3; }
+  .cam-corner { position:absolute; width:20px; height:20px; border-color:#3b82f6; border-style:solid; }
+  .cam-corner.tl { top:-1px; left:-1px;   border-width:3px 0 0 3px; border-radius:3px 0 0 0; }
+  .cam-corner.tr { top:-1px; right:-1px;  border-width:3px 3px 0 0; border-radius:0 3px 0 0; }
+  .cam-corner.bl { bottom:-1px; left:-1px;  border-width:0 0 3px 3px; border-radius:0 0 0 3px; }
+  .cam-corner.br { bottom:-1px; right:-1px; border-width:0 3px 3px 0; border-radius:0 0 3px 0; }
+  .cam-scanline { position:absolute; left:22px; right:22px; height:2px; background:linear-gradient(90deg,transparent,#3b82f6,transparent); z-index:4; display:none; animation:scanAnim 2s ease-in-out infinite; }
+  @keyframes scanAnim { 0%{top:22px} 50%{top:calc(100% - 24px)} 100%{top:22px} }
+  .cam-ok { position:absolute; inset:0; background:rgba(22,163,74,.82); display:none; flex-direction:column; align-items:center; justify-content:center; gap:8px; z-index:10; }
+  .cam-ok span { color:#fff; font-size:13px; font-weight:600; }
+  .hosting-notice { background:#fefce8; border:1px solid #fde68a; border-radius:8px; padding:12px 14px; font-size:12px; color:#92400e; line-height:1.7; }
+
+  /* scan success flash */
+  .scan-success-flash {
+    position: fixed; inset: 0; background: rgba(22,163,74,.25);
+    pointer-events: none; z-index: 9999; opacity: 0;
+    animation: scanFlash .6s ease forwards;
+  }
+  @keyframes scanFlash { 0%{opacity:0} 30%{opacity:1} 100%{opacity:0} }
+
+  /* status bar */
+  .status-bar { display: none; align-items: center; gap: 8px; border-radius: 8px; padding: 10px 14px; font-size: 12px; font-weight: 500; margin-bottom: 12px; }
+  .status-bar.show { display: flex; }
+  .status-bar.ok   { background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; }
+  .status-bar.err  { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; }
+  .status-bar.inf  { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
+
+  .slabel { font-size: 10px; font-weight: 700; letter-spacing: .07em; color: #94a3b8; margin-bottom: 10px; text-transform: uppercase; }
+  .vbadge { display: inline-block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 11px; font-weight: 600; padding: 2px 10px; border-radius: 20px; }
+
+  /* patient list */
+  .pt-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid #f8fafc; cursor: pointer; transition: background .1s; }
+  .pt-row:last-child { border: none; }
+  .pt-row:hover { background: #f8fafc; border-radius: 6px; }
+  .avatar { width: 34px; height: 34px; border-radius: 50%; background: #dbeafe; color: #1d4ed8; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+  .modal-content { border-radius: 14px; border: 1px solid #e2e8f0; }
+  .frow { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f8fafc; font-size: 13px; }
+  .frow:last-child { border: none; }
+  .fl { color: #64748b; } .fv { font-weight: 500; text-align: right; max-width: 60%; }
+
+  /* tabs */
+  .method-tabs { display: flex; gap: 3px; background: #f1f5f9; padding: 3px; border-radius: 9px; margin-bottom: 14px; }
+  .method-tab  { flex: 1; padding: 7px 4px; text-align: center; font-size: 12px; font-weight: 500; cursor: pointer; border-radius: 7px; border: none; background: transparent; color: #64748b; font-family: inherit; transition: background .12s; }
+  .method-tab.on { background: #fff; color: #1d4ed8; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+
+  /* big upload button */
+  .btn-upload-big {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; padding: 20px 16px; border-radius: 10px; border: 2px dashed #bfdbfe;
+    background: #eff6ff; color: #1d4ed8; cursor: pointer; width: 100%;
+    font-weight: 600; font-size: 13px; font-family: inherit; transition: background .15s;
+  }
+  .btn-upload-big:hover { background: #dbeafe; border-color: #93c5fd; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <div class="topbar-title">🏥 RME Klinik — Admin</div>
+    <div class="topbar-sub">Scan QR Pasien → Form terisi otomatis</div>
+  </div>
+  <div class="text-end">
+    <div style="font-size:12px;opacity:.8" id="clock"></div>
+    <div style="font-size:10px;opacity:.5" id="today-lbl"></div>
+  </div>
+</div>
+
+<div class="container-fluid py-3 px-3" style="max-width:980px">
+  <div id="status-bar" class="status-bar"></div>
+
+  <div class="row g-3">
+
+    <!-- ══ KIRI ══ -->
+    <div class="col-md-4">
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          📷 Input QR Pasien
+          <span id="scan-badge" class="badge bg-secondary" style="font-size:10px">Siap</span>
+        </div>
+        <div class="card-body">
+
+          <!-- Tabs -->
+          <div class="method-tabs">
+            <button class="method-tab on" onclick="switchTab('cam',this)">📷 Kamera</button>
+            <button class="method-tab"    onclick="switchTab('upload',this)">📁 Upload</button>
+            <button class="method-tab"    onclick="switchTab('paste',this)">📋 Paste</button>
+          </div>
+
+          <!-- TAB: KAMERA -->
+          <div id="tab-cam">
+            <!-- hosting warning (shown when not HTTPS/localhost) -->
+            <div id="https-notice" class="hosting-notice mb-3" style="display:none">
+              ⚠️ <strong>Kamera butuh HTTPS</strong><br>
+              File ini dibuka langsung (bukan dari server).<br><br>
+              <strong>Hosting gratis 30 detik:</strong><br>
+              1. Buka <strong>netlify.com/drop</strong><br>
+              2. Drag &amp; drop file HTML ini<br>
+              3. Dapat link HTTPS → buka di HP<br><br>
+              Sementara gunakan tab <strong>📁 Upload</strong> untuk foto QR.
+            </div>
+
+            <div class="cam-box" id="cam-box">
+              <video id="cam-video" autoplay playsinline muted></video>
+              <canvas id="cam-canvas" class="overlay"></canvas>
+              <div class="cam-frame">
+                <div class="cam-corner tl"></div>
+                <div class="cam-corner tr"></div>
+                <div class="cam-corner bl"></div>
+                <div class="cam-corner br"></div>
+              </div>
+              <div class="cam-scanline" id="cam-scanline"></div>
+              <div class="cam-ok" id="cam-ok">
+                <div style="font-size:2.5rem">✅</div>
+                <span>QR Terbaca!</span>
+              </div>
+              <div class="cam-idle" id="cam-idle">
+                <div style="font-size:2.5rem;margin-bottom:8px">📷</div>
+                Klik Aktifkan Kamera
+              </div>
+            </div>
+            <div class="d-flex gap-2">
+              <button class="btn btn-primary flex-fill btn-sm" id="btn-start" onclick="startScanner()">▶ Aktifkan Kamera</button>
+              <button class="btn btn-danger btn-sm" id="btn-stop" onclick="stopScanner()" style="display:none">■ Stop</button>
+            </div>
+            <p class="text-secondary text-center mt-2 mb-0" style="font-size:11px">Butuh HTTPS — lihat panduan di atas jika error</p>
+          </div>
+
+          <!-- TAB: UPLOAD -->
+          <div id="tab-upload" style="display:none">
+            <label class="btn-upload-big" for="upload-input">
+              <span style="font-size:2rem">📁</span>
+              <span>Pilih Gambar QR</span>
+              <span style="font-size:11px;font-weight:400;color:#3b82f6">JPG, PNG, screenshot QR</span>
+            </label>
+            <input type="file" id="upload-input" accept="image/*" style="display:none" onchange="readFromFile(event)">
+            <div id="upload-preview" style="display:none;margin-top:10px;text-align:center">
+              <img id="upload-img" style="max-width:100%;border-radius:8px;max-height:200px;object-fit:contain">
+            </div>
+            <canvas id="upload-canvas" style="display:none"></canvas>
+          </div>
+
+          <!-- TAB: PASTE JSON -->
+          <div id="tab-paste" style="display:none">
+            <label class="form-label">Paste JSON dari QR</label>
+            <textarea class="form-control font-monospace mb-2" id="qr-json-input" rows="5"
+              style="font-size:11px"
+              placeholder='{"visitId":"KJG-001","nama":"Budi","ttl":"1990-05-12","jk":"Laki-laki","alamat":"Jl. Merdeka 1","telp":"08123456789","keluhan":"Demam 3 hari","poli":"Umum"}'></textarea>
+            <button class="btn btn-primary w-100 btn-sm mb-2" onclick="processJSON()">
+              ⚡ Proses → Isi Form Otomatis
+            </button>
+            <button class="btn btn-outline-secondary w-100 btn-sm" onclick="loadDemo()">
+              Muat Data Demo
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Daftar Pasien -->
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          📋 Pasien Hari Ini
+          <span class="badge bg-primary rounded-pill" id="count-badge">0</span>
+        </div>
+        <div class="card-body p-0 px-3 py-2" style="max-height:280px;overflow-y:auto">
+          <div id="list-empty" class="text-center text-secondary py-4" style="font-size:12px">Belum ada data</div>
+          <div id="patient-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ KANAN: FORM ══ -->
+    <div class="col-md-8">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          📝 Form Pendaftaran Kunjungan
+          <div class="d-flex align-items-center gap-2">
+            <span id="form-visit-badge" class="vbadge" style="display:none"></span>
+            <button class="btn btn-outline-secondary btn-sm" onclick="clearForm()">Reset</button>
+          </div>
+        </div>
+        <div class="card-body">
+
+          <div id="autofill-notice" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;border-radius:8px;font-size:12px;padding:10px 14px;margin-bottom:14px;align-items:center;gap:8px">
+            <span>⚡</span>
+            <span>Form terisi otomatis dari QR — <strong id="autofill-vid"></strong></span>
+          </div>
+
+          <!-- ── DATA PASIEN ── -->
+          <div class="slabel">Data Pasien</div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-6">
+              <label class="form-label">Nama <span style="color:#ef4444">*</span></label>
+              <input class="form-control" id="f-nama" placeholder="Nama lengkap">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Nama Suami / Wali</label>
+              <input class="form-control" id="f-nama_suami" placeholder="Nama suami atau wali">
+            </div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-6">
+              <label class="form-label">NIK</label>
+              <input class="form-control" id="f-nik" placeholder="16 digit NIK" maxlength="16">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">NIK Wali <span style="font-size:10px;color:#94a3b8">(Imunisasi)</span></label>
+              <input class="form-control" id="f-nik_wali" placeholder="NIK wali" maxlength="16">
+            </div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-6">
+              <label class="form-label">No. Telepon <span style="color:#ef4444">*</span></label>
+              <input class="form-control" id="f-notelp" placeholder="081234567890">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Jenis Kelamin <span style="color:#ef4444">*</span></label>
+              <select class="form-select" id="f-jenis_kelamin">
+                <option value="">— Pilih —</option>
+                <option value="L">Laki-Laki</option>
+                <option value="P">Perempuan</option>
+              </select>
+            </div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-3 col-6">
+              <label class="form-label">Tanggal Lahir <span style="color:#ef4444">*</span></label>
+              <input type="date" class="form-control" id="f-tanggal_lahir" onchange="hitungUmurAdmin()">
+            </div>
+            <div class="col-md-3 col-6">
+              <label class="form-label">Umur</label>
+              <input type="text" class="form-control" id="f-umur" readonly style="background:#f8fafc;color:#3b82f6;font-weight:600">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Pekerjaan</label>
+              <input class="form-control" id="f-pekerjaan" placeholder="Pekerjaan">
+            </div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-6">
+              <label class="form-label">Kota</label>
+              <select class="form-select" id="f-kota" onchange="onAdminKotaChange()">
+                <option value="" disabled selected>Pilih Kota</option>
+                <option value="Kota Malang">Kota Malang</option>
+                <option value="Luar Daerah">Luar Daerah</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Kecamatan</label>
+              <select class="form-select" id="f-kecamatan" onchange="onAdminKecamatanChange()">
+                <option value="" disabled selected>Pilih Kecamatan</option>
+                <option value="Blimbing">Blimbing</option>
+                <option value="Kedungkandang">Kedungkandang</option>
+                <option value="Klojen">Klojen</option>
+                <option value="Lowokwaru">Lowokwaru</option>
+                <option value="Sukun">Sukun</option>
+                <option value="Luar Daerah">Luar Daerah</option>
+              </select>
+            </div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Kelurahan</label>
+              <select class="form-select" id="f-kelurahan" disabled>
+                <option value="" disabled selected>Pilih Kelurahan</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Alamat</label>
+              <input class="form-control" id="f-alamat" placeholder="Alamat lengkap">
+            </div>
+          </div>
+
+          <hr class="my-3" style="border-color:#f1f5f9">
+
+          <!-- ── DATA KUNJUNGAN ── -->
+          <div class="slabel">Data Kunjungan</div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-6">
+              <label class="form-label">Ruangan / Poli</label>
+              <select class="form-select" id="f-ruangan" onchange="onAdminRuanganChange()">
+                <option value="" disabled selected>Pilih Ruangan</option>
+                <option value="Poli Imunisasi">Poli Imunisasi</option>
+                <option value="Poli KB">Poli KB</option>
+                <option value="Poli KIA">Poli KIA</option>
+                <option value="Poli Spesialis">Poli Spesialis</option>
+                <option value="Poli Umum">Poli Umum</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Pemeriksaan</label>
+              <select class="form-select" id="f-pemeriksaan" disabled>
+                <option value="" disabled selected>Pilih Pemeriksaan</option>
+              </select>
+            </div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-6">
+              <label class="form-label">No. Antrian</label>
+              <input class="form-control" id="f-antrian" readonly style="background:#f8fafc;font-weight:600;color:#1d4ed8">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Tanggal Kunjungan</label>
+              <input type="date" class="form-control" id="f-tgl">
+            </div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Catatan Admin</label>
+              <textarea class="form-control" id="f-catatan" rows="2" placeholder="Alergi, riwayat, catatan khusus..."></textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Jenis Pembayaran</label>
+              <select class="form-select" id="f-bayar">
+                <option>Umum</option>
+                <option>BPJS</option>
+                <option>Asuransi Swasta</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button class="btn btn-success flex-fill py-2" onclick="saveRecord()">💾 Simpan &amp; Daftarkan</button>
+            <button class="btn btn-outline-primary" onclick="printRecord()">🖨️ Cetak</button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Modal Detail -->
+<div class="modal fade" id="modalDetail" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-3">
+        <h6 class="modal-title fw-semibold">Detail Kunjungan</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="modal-detail-body"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ── State ─────────────────────────────────────────────────────────
+let patients = [];
+let queueCount = 0;
+let visitCount = 0;
+let scanner = null;
+let scanned = false;
+const TODAY = new Date().toISOString().split('T')[0];
+document.getElementById('f-tgl').value = TODAY;
+
+// ── Clock ─────────────────────────────────────────────────────────
+(function tick(){
+  const n = new Date();
+  document.getElementById('clock').textContent =
+    n.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  document.getElementById('today-lbl').textContent =
+    n.toLocaleDateString('id-ID',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+  setTimeout(tick,1000);
+})();
+
+// ── Tabs ──────────────────────────────────────────────────────────
+function switchTab(t, el){
+  stopScanner();
+  document.querySelectorAll('.method-tab').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  ['cam','upload','paste'].forEach(id=>
+    document.getElementById('tab-'+id).style.display = id===t?'block':'none');
+}
+
+// ── Deteksi HTTPS on load ─────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', ()=>{
+  const isSecure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if(!isSecure){
+    document.getElementById('https-notice').style.display = 'block';
+  }
+});
+
+// ── Scanner (getUserMedia + jsQR) ─────────────────────────────────
+let videoStream = null;
+let scanLoop    = null;
+
+async function startScanner(){
+  if(videoStream) return;
+  scanned = false;
+  const video   = document.getElementById('cam-video');
+  const canvas  = document.getElementById('cam-canvas');
+  const idle    = document.getElementById('cam-idle');
+  const scanline= document.getElementById('cam-scanline');
+  try {
+    videoStream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:'environment', width:{ideal:640}, height:{ideal:640} }
+    });
+    video.srcObject = videoStream;
+    await video.play();
+    video.style.display   = 'block';
+    canvas.style.display  = 'block';
+    idle.style.display    = 'none';
+    scanline.style.display= 'block';
+    document.getElementById('btn-start').style.display = 'none';
+    document.getElementById('btn-stop').style.display  = 'inline-block';
+    document.getElementById('scan-badge').className    = 'badge bg-success';
+    document.getElementById('scan-badge').textContent  = 'Aktif';
+    showStatus('inf','Kamera aktif — arahkan ke QR Code pasien');
+    // scan loop
+    scanLoop = setInterval(()=>{
+      if(!video.videoWidth || scanned) return;
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0);
+      const img  = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(img.data, img.width, img.height, {inversionAttempts:'dontInvert'});
+      if(code) onScanSuccess(code.data);
+    }, 200);
+  } catch(e){
+    videoStream = null;
+    document.getElementById('https-notice').style.display = 'block';
+    showStatus('err','Kamera tidak bisa diakses. File harus dibuka via HTTPS — lihat panduan kuning di atas.');
+    document.getElementById('scan-badge').className   = 'badge bg-danger';
+    document.getElementById('scan-badge').textContent = 'Error';
+  }
+}
+
+function stopScanner(){
+  if(scanLoop){ clearInterval(scanLoop); scanLoop=null; }
+  if(videoStream){ videoStream.getTracks().forEach(t=>t.stop()); videoStream=null; }
+  const video   = document.getElementById('cam-video');
+  const canvas  = document.getElementById('cam-canvas');
+  video.style.display   = 'none';
+  canvas.style.display  = 'none';
+  document.getElementById('cam-idle').style.display    = 'block';
+  document.getElementById('cam-scanline').style.display= 'none';
+  document.getElementById('btn-start').style.display   = 'inline-block';
+  document.getElementById('btn-stop').style.display    = 'none';
+  document.getElementById('scan-badge').className      = 'badge bg-secondary';
+  document.getElementById('scan-badge').textContent    = 'Siap';
+}
+
+function onScanSuccess(text){
+  if(scanned) return;
+  scanned = true;
+  stopScanner();
+  const ok = document.getElementById('cam-ok');
+  ok.style.display = 'flex';
+  setTimeout(()=>ok.style.display='none', 1800);
+  document.getElementById('scan-badge').className   = 'badge bg-success';
+  document.getElementById('scan-badge').textContent = 'Terbaca ✓';
+  try {
+    fillForm(JSON.parse(text));
+    document.getElementById('qr-json-input').value = text;
+  } catch(e){
+    showStatus('err','QR terbaca tapi bukan format JSON RME.');
+  }
+}
+
+// ── Upload File (jsQR) ────────────────────────────────────────────
+function readFromFile(e){
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = ()=>{
+      document.getElementById('upload-img').src = ev.target.result;
+      document.getElementById('upload-preview').style.display = 'block';
+      const c = document.createElement('canvas');
+      c.width=img.width; c.height=img.height;
+      c.getContext('2d').drawImage(img,0,0);
+      const idata = c.getContext('2d').getImageData(0,0,c.width,c.height);
+      const code  = jsQR(idata.data, idata.width, idata.height, {inversionAttempts:'attemptBoth'});
+      if(code){
+        document.getElementById('scan-badge').className   = 'badge bg-success';
+        document.getElementById('scan-badge').textContent = 'Terbaca ✓';
+        try {
+          fillForm(JSON.parse(code.data));
+          document.getElementById('qr-json-input').value = code.data;
+        } catch(er){ showStatus('err','QR terbaca tapi bukan format JSON RME.'); }
+      } else {
+        showStatus('err','QR tidak terbaca dari gambar. Pastikan gambar terang, tidak buram, dan QR tidak terpotong.');
+        document.getElementById('scan-badge').className   = 'badge bg-danger';
+        document.getElementById('scan-badge').textContent = 'Gagal';
+      }
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+}
+
+// ── Paste JSON ────────────────────────────────────────────────────
+function processJSON(){
+  const raw = document.getElementById('qr-json-input').value.trim();
+  if(!raw){ showStatus('err','Input JSON kosong'); return; }
+  try { fillForm(JSON.parse(raw)); }
+  catch(e){ showStatus('err','Format JSON tidak valid.'); }
+}
+
+function loadDemo(){
+  const d = {
+    visitId:'KJG-001', antrian:'A-001',
+    nama:'Budi Santoso', nama_suami:'Ahmad Santoso',
+    nik:'3507012503880001', notelp:'081234567890',
+    jenis_kelamin:'L', tanggal_lahir:'1988-03-15',
+    pekerjaan:'Wiraswasta',
+    kota:'Kota Malang', kecamatan:'Lowokwaru',
+    kelurahan:'Dinoyo', alamat:'Jl. Soekarno Hatta No.12',
+    tgl_kunjungan: TODAY
+  };
+  document.getElementById('qr-json-input').value = JSON.stringify(d, null, 2);
+  showStatus('inf','Data demo dimuat — klik "Proses → Isi Form Otomatis"');
+}
+
+// ── Data Kelurahan ────────────────────────────────────────────────
+const KELURAHAN_ADMIN = {
+  'Blimbing':      ['Arjosari','Balearjosari','Blimbing','Bunulrejo','Jodipan','Kesatrian','Pandanwangi','Polehan','Polowijen','Purwantoro','Purwodadi'],
+  'Kedungkandang': ['Arjowinangun','Bumiayu','Buring','Cemorokandang','Kedungkandang','Kotalama','Lesanpuro','Madyopuro','Mergosono','Sawojajar','Tlogowaru','Wonokoyo'],
+  'Klojen':        ['Bareng','Gadingasri','Kasin','Kauman','Kiduldalem','Klojen','Oro-Oro Dowo','Penanggungan','Rampal Celaket','Samaan','Sukoharjo'],
+  'Lowokwaru':     ['Dinoyo','Jatimulyo','Ketawanggede','Lowokwaru','Merjosari','Mojolangu','Sumbersari','Tasikmadu','Tlogomas','Tulusrejo','Tunggulwulung','Tunjungsekar'],
+  'Sukun':         ['Bakalankrajan','Bandulan','Bandungrejosari','Ciptomulyo','Gadang','Karangbesuki','Kebonsari','Mulyorejo','Pisangcandi','Sukun','Tanjungrejo'],
+  'Luar Daerah':   ['Luar Daerah']
+};
+
+const PEMERIKSAAN_BY_RUANGAN_ADMIN = {
+  'Poli Imunisasi' : ['Imunisasi','Lain - Lainnya'],
+  'Poli KB'        : ['KB','KB Suntik 1 Bulan','KB Suntik 3 Bulan','Kontrol IUD','Lepas Implant','Lepas IUD','Lepas Pasang IUD','Pasang IUD','Pasang Implant','Lain - Lainnya'],
+  'Poli KIA'       : ['Anak Sakit','Bumil-Busui Sakit','Cek Rahim','Ganti Perban SC','Hamil','Konsultasi','Kontrol Neonatus','Tindik Bayi','USG 4D','Lain - Lainnya'],
+  'Poli Spesialis' : ['Dokter Obgyn','Lain - Lainnya'],
+  'Poli Umum'      : ['Rawat Luka','Konsultasi','Periksa Umum','Tes Kesehatan','Lain - Lainnya']
+};
+
+function hitungUmurAdmin(){
+  const val = document.getElementById('f-tanggal_lahir').value; if(!val) return;
+  const lahir = new Date(val); const today = new Date();
+  if(lahir > today){ document.getElementById('f-umur').value='Tanggal tidak valid'; return; }
+  let t = today.getFullYear()-lahir.getFullYear();
+  let b = today.getMonth()-lahir.getMonth();
+  let h = today.getDate()-lahir.getDate();
+  if(h<0){ const bbl=new Date(today.getFullYear(),today.getMonth(),0).getDate(); h+=bbl; b--; }
+  if(b<0){ t--; b+=12; }
+  document.getElementById('f-umur').value = t+' tahun, '+b+' bulan, '+h+' hari';
+}
+
+function onAdminKotaChange(){
+  const kota = document.getElementById('f-kota').value;
+  const kecSel = document.getElementById('f-kecamatan');
+  const kelSel = document.getElementById('f-kelurahan');
+  kecSel.value=''; kelSel.innerHTML='<option value="" disabled selected>Pilih Kelurahan</option>'; kelSel.disabled=true;
+  if(kota==='Luar Daerah'){ kecSel.value='Luar Daerah'; populateKelurahanAdmin('Luar Daerah'); }
+}
+
+function onAdminKecamatanChange(){
+  populateKelurahanAdmin(document.getElementById('f-kecamatan').value);
+}
+
+function populateKelurahanAdmin(kec){
+  const sel = document.getElementById('f-kelurahan');
+  sel.innerHTML='<option value="" disabled selected>Pilih Kelurahan</option>';
+  sel.disabled=false;
+  const list=(KELURAHAN_ADMIN[kec]||[]).slice().sort((a,b)=>
+    a==='Luar Daerah'?1:b==='Luar Daerah'?-1:a.localeCompare(b,'id',{sensitivity:'base'}));
+  list.forEach(k=>{ const o=document.createElement('option'); o.value=k; o.textContent=k; sel.appendChild(o); });
+}
+
+function onAdminRuanganChange(){
+  const ruangan = document.getElementById('f-ruangan').value;
+  const sel = document.getElementById('f-pemeriksaan');
+  sel.innerHTML='<option value="" disabled selected>Pilih Pemeriksaan</option>';
+  sel.disabled=false;
+  const lain='Lain - Lainnya';
+  const list=(PEMERIKSAAN_BY_RUANGAN_ADMIN[ruangan]||[]).filter(p=>p!==lain)
+    .sort((a,b)=>a.localeCompare(b,'id',{sensitivity:'base'}));
+  list.forEach(p=>{ const o=document.createElement('option'); o.value=p; o.textContent=p; sel.appendChild(o); });
+  sel.appendChild(new Option(lain,lain));
+  if(list.length===1) sel.value=list[0];
+}
+
+function setAndFlash(id, val){
+  const el = document.getElementById(id); if(!el||val===undefined||val===null||val==='') return;
+  el.value = val;
+  el.classList.remove('filled','flash'); void el.offsetWidth; el.classList.add('filled','flash');
+}
+
+// ── Fill Form — key cocok dengan JSON dari pasien ─────────────────
+function fillForm(d){
+  // Text / input fields — langsung map key JSON ke id field
+  setAndFlash('f-nama',          d.nama);
+  setAndFlash('f-nama_suami',    d.nama_suami);
+  setAndFlash('f-nik',           d.nik);
+  setAndFlash('f-nik_wali',      d.nik_wali);
+  setAndFlash('f-notelp',        d.notelp);
+  setAndFlash('f-tanggal_lahir', d.tanggal_lahir);
+  setAndFlash('f-pekerjaan',     d.pekerjaan);
+  setAndFlash('f-alamat',        d.alamat);
+
+  // Jenis kelamin — value L/P
+  if(d.jenis_kelamin){
+    const s = document.getElementById('f-jenis_kelamin');
+    s.value = d.jenis_kelamin;
+    s.classList.remove('filled','flash'); void s.offsetWidth; s.classList.add('filled','flash');
+  }
+
+  // Kota
+  if(d.kota){
+    const s = document.getElementById('f-kota');
+    s.value = d.kota;
+    s.classList.remove('filled','flash'); void s.offsetWidth; s.classList.add('filled','flash');
+  }
+
+  // Kecamatan — isi dulu kelurahan-nya
+  if(d.kecamatan){
+    const s = document.getElementById('f-kecamatan');
+    s.value = d.kecamatan;
+    s.classList.remove('filled','flash'); void s.offsetWidth; s.classList.add('filled','flash');
+    populateKelurahanAdmin(d.kecamatan);
+  }
+
+  // Kelurahan — setelah populate
+  if(d.kelurahan){
+    setTimeout(()=>{
+      const s = document.getElementById('f-kelurahan');
+      s.value = d.kelurahan;
+      s.classList.remove('filled','flash'); void s.offsetWidth; s.classList.add('filled','flash');
+    }, 50);
+  }
+
+  // Ruangan
+  if(d.ruangan){
+    const s=document.getElementById('f-ruangan'); s.value=d.ruangan;
+    s.classList.remove('filled','flash'); void s.offsetWidth; s.classList.add('filled','flash');
+    onAdminRuanganChange();
+  }
+  // Pemeriksaan — setelah ruangan di-populate
+  if(d.pemeriksaan){
+    setTimeout(()=>{
+      const s=document.getElementById('f-pemeriksaan'); s.value=d.pemeriksaan;
+      s.classList.remove('filled','flash'); void s.offsetWidth; s.classList.add('filled','flash');
+    }, 80);
+  }
+  // Hitung umur otomatis
+  if(d.tanggal_lahir) hitungUmurAdmin();
+
+  // Antrian & tanggal kunjungan
+  if(!document.getElementById('f-antrian').value)
+    document.getElementById('f-antrian').value = d.antrian || autoAntrian();
+  if(d.tgl_kunjungan) document.getElementById('f-tgl').value = d.tgl_kunjungan;
+
+  // Visit badge
+  if(d.visitId){
+    document.getElementById('form-visit-badge').textContent = d.visitId;
+    document.getElementById('form-visit-badge').style.display = 'inline-block';
+    document.getElementById('autofill-vid').textContent = d.visitId;
+  }
+  document.getElementById('autofill-notice').style.display = 'flex';
+  showStatus('ok','⚡ Form terisi otomatis — ' + (d.nama||'pasien'));
+  setTimeout(()=>document.querySelector('.col-md-8').scrollIntoView({behavior:'smooth',block:'start'}), 200);
+}
+
+// ── Save ──────────────────────────────────────────────────────────
+function saveRecord(){
+  const nama  = document.getElementById('f-nama').value.trim();
+  const notelp= document.getElementById('f-notelp').value.trim();
+  if(!nama){ showStatus('err','Nama wajib diisi'); return; }
+  if(!notelp){ showStatus('err','No. Telepon wajib diisi'); return; }
+
+  visitCount++;
+  const vid = document.getElementById('form-visit-badge').style.display!=='none'
+    ? document.getElementById('form-visit-badge').textContent
+    : 'KJG-'+String(visitCount).padStart(3,'0');
+  const antrian  = document.getElementById('f-antrian').value || autoAntrian();
+  const initials = nama.split(' ').slice(0,2).map(n=>n[0].toUpperCase()).join('');
+  const jkVal    = document.getElementById('f-jenis_kelamin').value;
+  const jkLabel  = jkVal==='L'?'Laki-Laki':jkVal==='P'?'Perempuan':'—';
+
+  patients.unshift({
+    visitId:vid, nama, initials, antrian,
+    nama_suami:    document.getElementById('f-nama_suami').value,
+    nik:           document.getElementById('f-nik').value,
+    nik_wali:      document.getElementById('f-nik_wali').value,
+    notelp,
+    jenis_kelamin: jkVal, jkLabel,
+    tanggal_lahir: document.getElementById('f-tanggal_lahir').value,
+    umur:          document.getElementById('f-umur').value,
+    pekerjaan:     document.getElementById('f-pekerjaan').value,
+    kota:          document.getElementById('f-kota').value,
+    kecamatan:     document.getElementById('f-kecamatan').value,
+    kelurahan:     document.getElementById('f-kelurahan').value,
+    alamat:        document.getElementById('f-alamat').value,
+    ruangan:       document.getElementById('f-ruangan').value,
+    pemeriksaan:   document.getElementById('f-pemeriksaan').value,
+    tgl:           document.getElementById('f-tgl').value,
+    bayar:         document.getElementById('f-bayar').value,
+    catatan:       document.getElementById('f-catatan').value,
+    time: new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}),
+  });
+  renderList();
+  showStatus('ok','✅ Data '+nama+' tersimpan — '+antrian);
+  clearForm();
+}
+
+function autoAntrian(){ queueCount++; return 'A-'+String(queueCount).padStart(3,'0'); }
+
+function clearForm(){
+  ['f-nama','f-nama_suami','f-nik','f-nik_wali','f-notelp','f-tanggal_lahir',
+   'f-umur','f-pekerjaan','f-alamat','f-antrian','f-catatan'].forEach(id=>{
+    const el=document.getElementById(id); if(!el) return;
+    el.value=''; el.classList.remove('filled','flash');
+  });
+  ['f-jenis_kelamin','f-kota','f-kecamatan'].forEach(id=>{
+    const el=document.getElementById(id); if(!el) return;
+    el.value=''; el.classList.remove('filled','flash');
+  });
+  const kel=document.getElementById('f-kelurahan');
+  kel.innerHTML='<option value="" disabled selected>Pilih Kelurahan</option>'; kel.disabled=true;
+  document.getElementById('f-tgl').value=TODAY;
+  document.getElementById('f-ruangan').value='';
+  document.getElementById('f-pemeriksaan').innerHTML='<option value="" disabled selected>Pilih Pemeriksaan</option>';
+  document.getElementById('f-pemeriksaan').disabled=true;
+  document.getElementById('autofill-notice').style.display='none';
+  document.getElementById('form-visit-badge').style.display='none';
+  document.getElementById('qr-json-input').value='';
+  document.getElementById('scan-badge').className='badge bg-secondary';
+  document.getElementById('scan-badge').textContent='Siap';
+  document.getElementById('upload-preview').style.display='none';
+  scanned = false;
+}
+
+// ── Print ─────────────────────────────────────────────────────────
+function printRecord(){
+  const g  = id => document.getElementById(id)?.value||'—';
+  const nama    = g('f-nama');
+  const ttlRaw  = g('f-tanggal_lahir');
+  const ttl     = ttlRaw!=='—'?new Date(ttlRaw).toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'}):'—';
+  const jkVal   = document.getElementById('f-jenis_kelamin').value;
+  const jkLabel = jkVal==='L'?'Laki-Laki':jkVal==='P'?'Perempuan':'—';
+  const antrian = g('f-antrian');
+  const vid     = document.getElementById('form-visit-badge').textContent||'';
+  const w = window.open('','_blank');
+  w.document.write(`<!DOCTYPE html><html><head><title>RME — ${nama}</title>
+  <style>body{font-family:Arial,sans-serif;padding:40px;max-width:580px;margin:0 auto}
+  h2{margin-bottom:4px}p.sub{color:#666;font-size:13px;margin-bottom:24px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  td{padding:8px 0;border-bottom:1px solid #eee;vertical-align:top}
+  td:first-child{color:#64748b;width:42%}td:last-child{font-weight:500}
+  .sec{font-size:10px;font-weight:700;letter-spacing:.06em;color:#94a3b8;margin:18px 0 8px;text-transform:uppercase}
+  </style></head><body>
+  <h2>Pendaftaran Kunjungan</h2>
+  <p class="sub">RME Klinik &nbsp;·&nbsp; ${new Date().toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'})} &nbsp;·&nbsp; ${vid} &nbsp;·&nbsp; Antrian ${antrian}</p>
+  <div class="sec">Data Pasien</div><table>
+  <tr><td>Nama</td><td>${nama}</td></tr>
+  <tr><td>Nama Suami/Wali</td><td>${g('f-nama_suami')}</td></tr>
+  <tr><td>NIK</td><td>${g('f-nik')}</td></tr>
+  <tr><td>Tanggal Lahir</td><td>${ttl}</td></tr>
+  <tr><td>Umur</td><td>${g('f-umur')}</td></tr>
+  <tr><td>Jenis Kelamin</td><td>${jkLabel}</td></tr>
+  <tr><td>No. Telepon</td><td>${g('f-notelp')}</td></tr>
+  <tr><td>Pekerjaan</td><td>${g('f-pekerjaan')}</td></tr>
+  <tr><td>Kota</td><td>${g('f-kota')}</td></tr>
+  <tr><td>Kecamatan</td><td>${g('f-kecamatan')}</td></tr>
+  <tr><td>Kelurahan</td><td>${g('f-kelurahan')}</td></tr>
+  <tr><td>Alamat</td><td>${g('f-alamat')}</td></tr>
+  </table>
+  <div class="sec">Kunjungan</div><table>
+  <tr><td>Tanggal</td><td>${g('f-tgl')}</td></tr>
+  <tr><td>Pembayaran</td><td>${g('f-bayar')}</td></tr>
+  <tr><td>Catatan</td><td>${g('f-catatan')}</td></tr>
+  </table><script>window.onload=()=>window.print()<\/script></body></html>`);
+}
+
+// ── List ──────────────────────────────────────────────────────────
+function renderList(){
+  const list=document.getElementById('patient-list');
+  const empty=document.getElementById('list-empty');
+  document.getElementById('count-badge').textContent=patients.length;
+  if(!patients.length){ empty.style.display='block'; list.innerHTML=''; return; }
+  empty.style.display='none';
+  list.innerHTML=patients.map(p=>`
+    <div class="pt-row" onclick="showDetail('${p.visitId}')">
+      <div class="avatar">${p.initials}</div>
+      <div class="flex-grow-1">
+        <div class="fw-medium" style="font-size:13px">${p.nama}</div>
+        <div class="text-secondary" style="font-size:11px">${p.antrian} · ${p.ruangan||'—'} · ${p.time}</div>
+      </div>
+      <span class="badge bg-success-subtle text-success" style="font-size:10px">✓</span>
+    </div>`).join('');
+}
+
+function showDetail(vid){
+  const p=patients.find(x=>x.visitId===vid); if(!p) return;
+  const ttlF=p.tanggal_lahir?new Date(p.tanggal_lahir).toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'}):'—';
+  const rows = [
+    ['Nama Suami/Wali', p.nama_suami],
+    ['NIK',            p.nik],
+    ['No. Telepon',    p.notelp],
+    ['Jenis Kelamin',  p.jkLabel],
+    ['TTL',            ttlF],
+    ['Umur',           p.umur],
+    ['Pekerjaan',      p.pekerjaan],
+    ['Kota',           p.kota],
+    ['Kecamatan',      p.kecamatan],
+    ['Kelurahan',      p.kelurahan],
+    ['Alamat',         p.alamat],
+    ['Ruangan',        p.ruangan],
+    ['Pemeriksaan',    p.pemeriksaan],
+    ['Pembayaran',     p.bayar],
+    ['Catatan',        p.catatan],
+  ].filter(r=>r[1]).map(([l,v])=>`<div class="frow"><span class="fl">${l}</span><span class="fv">${v}</span></div>`).join('');
+  document.getElementById('modal-detail-body').innerHTML=`
+    <div class="d-flex align-items-center gap-3 mb-3">
+      <div class="avatar" style="width:44px;height:44px;font-size:15px">${p.initials}</div>
+      <div><div class="fw-semibold">${p.nama}</div>
+      <div class="text-secondary small">${p.antrian} · <span class="vbadge">${p.visitId}</span></div></div>
+    </div>${rows}`;
+  new bootstrap.Modal(document.getElementById('modalDetail')).show();
+}
+
+// ── Status ────────────────────────────────────────────────────────
+function showStatus(type, msg){
+  const el=document.getElementById('status-bar');
+  el.className='status-bar show '+type;
+  el.textContent=msg;
+  clearTimeout(el._t);
+  el._t=setTimeout(()=>el.classList.remove('show'),4500);
+}
+</script>
+</body>
+</html>
